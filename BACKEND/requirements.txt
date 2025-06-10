@@ -225,3 +225,4 @@ xxhash==3.5.0
 yarl==1.11.1
 zope.event==5.0
 zope.interface==7.1.0
+torch
