@@ -1,0 +1,115 @@
+.containerParent {
+    display: flex;
+    flex-direction: row;
+    width: 100vw;
+    height: 100vh;
+    justify-content: space-between;
+}
+
+.leftChild {
+    width: 40%;
+    background-image: url('./../assets/images/loginBG.jpeg');
+    /* Update with the actual image URL */
+    background-size: cover;
+    background-position: center;
+    height: 100vh;
+}
+
+
+.righChildParent {}
+
+.rightChild {
+    background-image: url('./../assets/images/loginChild.jpg');
+    /* Update with the actual image URL */
+    background-size: cover;
+    background-position: center;
+    height: 100vh;
+    width: 60%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    /* Align the logo and text to the top */
+    /* padding: 40px; */
+    padding-left: 7rem;
+    box-sizing: border-box;
+
+    /* height: 65%; */
+    /* justify-content: space-between */
+}
+
+.logo {
+    width: 150px;
+    /* Set logo size */
+    margin-bottom: 40px;
+    /* Spacing below the logo */
+}
+
+.welcomeText {
+    font-size: 40px;
+    font-weight: 400;
+    margin-bottom: 10px;
+    color: #000;
+    line-height: 53.25px;
+}
+
+.projectName {
+    font-size: 50px;
+    font-weight: 700;
+    color: #000;
+    line-height: 66.56px;
+}
+
+.projectDescription {
+    font-size: 13px;
+    font-weight: 400;
+    color: #0000007d;
+    /* width: 40rem; */
+    /* line-height: 45.56px; */
+}
+
+.buttonsContainer {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    /* Align the buttons to the left */
+    gap: 20px;
+    margin-top: 30px;
+}
+
+.loginButtonGoogle {
+    width: 300px !important;
+    height: 35px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    background-color: #fff !important;
+    color: rgba(0, 0, 0, 0.54) !important;
+
+}
+
+.loginButtonFacebook {
+    width: 300px !important;
+    height: 35px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    background-color: #1877F2 !important;
+}
+
+@media (max-width: 768px) {
+    .containerParent {
+        flex-direction: column;
+    }
+
+    .leftChild {
+        width: 100%;
+        height: 40vh;
+    }
+
+    .rightChild {
+        width: 100%;
+        padding: 20px;
+    }
+}

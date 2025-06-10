@@ -1,0 +1,27 @@
+.onHoverButton {
+    cursor: pointer;
+}
+
+.onHoverButton:hover {
+    text-decoration: underline;
+}
+
+.audioPlayer {
+    background-color: transparent;
+    height: 35px;
+    /* Ensure the unit is defined */
+    width: 300px;
+    /* Ensure the unit is defined */
+    outline: none;
+    /* Consider accessibility alternatives */
+}
+
+
+
+@media only screen and (max-width: 768px) {
+    .audioPlayer {
+        width: 90%;
+
+    }
+
+}

@@ -1,0 +1,342 @@
+.container {
+    height: 100vh;
+    /* Full height of the viewport */
+    display: flex;
+    flex-direction: column;
+    padding: auto 5%;
+}
+
+.top-section {
+    height: 25rem;
+    background-image: url('./../assets/images/Group.png');
+    /* Set your image path here */
+    background-size: cover;
+    /* Cover the entire section */
+    background-position: center;
+    padding: 0 5%;
+    /* align-items: center; */
+    /* Center the image */
+}
+
+.bottom-section {
+    /* height: 50%; */
+    background-color: white;
+    /* Add any background color for the bottom section */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    padding: 0 5%;
+}
+
+.logo {
+    height: 45px;
+    margin-top: 5px;
+}
+
+.headerTitle {
+    font-size: 24px;
+    font-weight: 700;
+    margin-top: 0.75rem;
+}
+
+.headerSubTitle {
+    font-size: 24px;
+    font-weight: 400;
+    margin-bottom: 0;
+}
+
+.headerContent {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: auto;
+}
+
+/* .centerRuler {
+    border-width: 2px solid #ccc;
+    background-color: black;
+    width: 5%;
+    height: 5px;
+    border-radius: 10px;
+
+} */
+
+.slider-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 300px;
+    margin: 20px auto;
+    position: relative;
+    /* Make the container relative for positioning */
+}
+
+.slider {
+    position: relative;
+    width: 100%;
+    height: 50px;
+    background: #fff;
+    border-radius: 25px;
+    cursor: pointer;
+    overflow: hidden;
+    /* Hide overflow to create a clean slide effect */
+}
+
+.toggle {
+    position: absolute;
+    width: 50%;
+    height: 100%;
+    background: #007bff;
+    border-radius: 25px;
+    transition: transform 0.3s ease;
+    /* Smooth transition */
+}
+
+.upload .toggle {
+    transform: translateX(0);
+}
+
+.record .toggle {
+    transform: translateX(100%);
+}
+
+.options {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.option {
+    width: 50%;
+    text-align: center;
+    font-weight: bold;
+    cursor: pointer;
+    /* Add cursor pointer for better UX */
+}
+
+.option.active {
+    color: #fff;
+    /* Highlight color for active option */
+}
+
+.recordSectionContainer {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    padding: 25px;
+    height: 80%;
+    gap:15px;
+
+}
+
+.childSection {
+    width: 70%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.childSectionRecord {
+    width: 50%;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.uploadSection {
+    background-color: white;
+    border: 2px dashed #ccc;
+    border-radius: 30px;
+    padding: 10px;
+    height: 12rem;
+    width:70rem;
+}
+
+.recordSection {
+    background-color: white;
+    border: 2px dashed #ccc;
+    border-radius: 30px;
+    padding: 10px;
+    height: 10rem;
+
+}
+
+.uploaderContentSection {
+    font-size: 16px;
+    font-weight: 700;
+    padding: 16px 0;
+}
+
+.browseButtonStyle {
+    color: #0560FD;
+    text-decoration: underline;
+
+}
+
+.uploaderMutedText,
+.mutedText {
+    font-size: 12px;
+    font-weight: 400;
+    color: #676767;
+    padding: 10px 0;
+
+}
+
+.uploadIconHolder {
+    padding: 16px 0 0px;
+
+}
+
+
+.dropzone {
+    position: relative;
+}
+
+
+.recordSectionContainer {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-evenly;
+    align-items: center;
+    /* height: 60%; */
+}
+
+.recordSectionL1IconHolder {
+    background-color: #0560FD;
+    border-radius: 50% !important;
+    padding: 0.25rem;
+    margin-left: 10px;
+}
+
+.recordL1 .titleContainer {
+    font-weight: 600;
+    font-size: 24px;
+    margin: 0;
+
+}
+
+.recordL1 .titleSection {
+    text-align: center;
+}
+
+.recordL1 .mutedText {
+    font-size: 16px;
+    margin-bottom: 0;
+    padding: 0 40px;
+
+}
+
+.flexProperties {
+    display: flex;
+    flex-direction: row;
+}
+
+.modal_text {
+    font-size: 14px;
+    font-weight: 500;
+    margin-top: 10px;
+    color: #646464;
+
+}
+
+.modal_text span {
+    margin-left: 10px;
+    margin-right: 10px;
+}
+.flex-center{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.headerTitle-mobile{
+    display: none;
+}
+
+@media only screen and (max-width: 768px) {
+
+
+    .top-section {
+        height: 35rem;
+    }
+
+    .headerContent {
+        width: 85%;
+        text-align: center;
+    }
+    .headerTitle{
+        display: none;
+    }
+    .headerTitle-mobile{
+        font-size: 13px;
+        font-weight: 700;
+        margin-top: 1rem;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    /* .headerContent .headerTitle {
+        font-size: 26px;
+    } */
+
+    .headerContent .headerSubTitle {
+        margin: 0;
+        font-size: 14px;
+    }
+
+    /* .centerRuler {
+        width: 25%;
+    } */
+
+    .recordSectionContainer {
+
+        flex-direction: column;
+
+    }
+
+    .childSection {
+        width: 100%;
+    }
+
+    .slider {
+        width: 85%;
+        height: 35px;
+    }
+
+    .option:nth-of-type(2) {
+        padding-right: 16px;
+
+    }
+
+    .uploaderContentSection {
+        font-size: 14px;
+        padding-bottom: 0;
+    }
+
+    .uploaderMutedText {
+        font-size: 8px;
+    }
+
+    /* .childSection {
+        width: 55%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    } */
+
+}
+
+.flex-properties-corner{
+    display: flex;
+    /* flex-direction: row; */
+    justify-content: space-between;
+}

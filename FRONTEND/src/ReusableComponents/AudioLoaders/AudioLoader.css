@@ -1,0 +1,56 @@
+/* AudioLoader.css */
+.audio-loader {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: fixed; /* Change to fixed */
+  top: 0;          /* Ensure it starts from the top */
+  left: 0;         /* Ensure it starts from the left */
+  right: 0;        /* Ensure it stretches to the right */
+  bottom: 0;       /* Ensure it stretches to the bottom */
+  background: rgba(105, 105, 105, 0.67); /* Use rgba for transparency */
+  z-index: 9999;   /* Ensure it sits above other content */
+}
+
+.loader-container {
+  display: flex;
+}
+
+.bar {
+  width: 0.5rem;
+  height: 5rem;
+  background-color: #005cee;
+  animation: bounce 1.2s infinite ease-in-out;
+  margin: 10px;
+}
+
+.bar:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.bar:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.bar:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.bar:nth-child(4) {
+  animation-delay: 0.3s;
+}
+
+.bar:nth-child(5) {
+  animation-delay: 0.4s;
+}
+
+@keyframes bounce {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+
+  50% {
+    transform: scaleY(1);
+  }
+}
