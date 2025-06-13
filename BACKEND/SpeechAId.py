@@ -9,6 +9,10 @@ import warnings
 import io
 import numpy as np
 import re
+import subprocess
+import traceback
+import noisereduce as nr
+import librosa.effects
 
 import sys
 import datetime
@@ -58,7 +62,7 @@ from nltk.util import ngrams
 
 import language_tool_python
 
-from kokoro import KPipeline
+#from kokoro import KPipeline
 
 ###############################################################################################################
 ########################### Initializing flask app, setting CORS ##############################################
@@ -130,7 +134,16 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
 # Define available models with `type` differentiation
+SPEAKERS_DIR = "speakers"
+AVAILABLE_VOICES = [{
+    "label": "GR",
+    "id": "speakers/GR.wav",
+    "text": "speakers/GR.txt"
+  }]
+current_voice_path = AVAILABLE_VOICES[0]["id"]
 
+# Ensure the directory exists
+os.makedirs(SPEAKERS_DIR, exist_ok=True)
 
 AVAILABLE_MODELS = [
     {"id": "openai/whisper-small", "label": "Whisper Small Base", "type": "whisper"},
@@ -140,6 +153,7 @@ AVAILABLE_MODELS = [
     {"id": "/home/arun/ranga-ai/active-speech/testrun/Model/Synthetic_Finetuned_V2", "label": "Whisper Fine-tuned on Synthetic data V2", "type": "whisper"},
     {"id": "/home/arun/ranga-ai/active-speech/testrun/Model/GR_V4/", "label": "Whisper Fine-tuned on GR_V4", "type": "whisper"}   
 ]
+
 
 ##########################################################################################################
 ########################### Model loading and initializing the base model ################################
@@ -216,23 +230,23 @@ else:
 ############################################# TTS Model loading  #########################################
 
 # Load TTS model
-def load_tts_model():
-    """
-    Load the Kokoro TTS model.
-    Returns:
-        KPipeline: Initialized Kokoro TTS pipeline
-    """
-    print("Loading Kokoro TTS model...")
-    try:
-        # Initialize Kokoro TTS pipeline
-        # You can customize the language code and other parameters as needed
-        pipeline = KPipeline(lang_code='a')
-        return pipeline
-    except Exception as e:
-        print(f"Error loading Kokoro TTS model: {str(e)}")
-        traceback.print_exc()
-        return None
-synthesiser = KPipeline(lang_code='a')
+# def load_tts_model():
+#     """
+#     Load the Kokoro TTS model.
+#     Returns:
+#         KPipeline: Initialized Kokoro TTS pipeline
+#     """
+#     print("Loading Kokoro TTS model...")
+#     try:
+#         # Initialize Kokoro TTS pipeline
+#         # You can customize the language code and other parameters as needed
+#         pipeline = KPipeline(lang_code='a')
+#         return pipeline
+#     except Exception as e:
+#         print(f"Error loading Kokoro TTS model: {str(e)}")
+#         traceback.print_exc()
+#         return None
+# synthesiser = KPipeline(lang_code='a')
 
 ##########################################################################################################
 ############################################# Converting the audio into .wav  #########################################
@@ -433,6 +447,84 @@ def get_available_models():
 
     except Exception as e:
         return jsonify({"error": str(e), "status": "error"}), 500
+    
+#######################################################################################################  
+##################################### create_voice ####################################################
+@app.route('/create_voice', methods=['POST'])
+def create_voice():
+    try:
+        name = request.form.get('name')
+        audio = request.files.get('audio')
+
+        if not name or not audio:
+            return jsonify({"status": "error", "message": "Name or audio file missing"}), 400
+
+        filename_base = secure_filename(name)
+        audio_path = os.path.join(SPEAKERS_DIR, filename_base + ".wav")
+        text_path = os.path.join(SPEAKERS_DIR, filename_base + ".txt")
+
+        # Save audio file
+        audio.save(audio_path)
+
+        # Save default reference phrase
+        default_phrase = "Apples are healthy for you. The quick brown fox jumps over the lazy dog.."
+        with open(text_path, "w") as f:
+            f.write(default_phrase)
+
+        # Add to available voices
+        voice_entry = {
+            "label": name,
+            "id": audio_path,
+            "text": text_path
+        }
+        AVAILABLE_VOICES.append(voice_entry)
+
+        return jsonify({"status": "success", "message": f"Voice '{name}' created successfully"})
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+#######################################################################################################
+##################################### get_available_voices ############################################
+
+@app.route('/get_available_voices', methods=['GET', 'POST'])
+def get_available_voices():
+    global current_voice_path
+    try:
+        if request.method == 'GET':
+            current_voice = next((v for v in AVAILABLE_VOICES if v["id"] == current_voice_path), None)
+            return jsonify({
+                "voices": AVAILABLE_VOICES,
+                "current_voice": current_voice,
+                "status": "success"
+            })
+
+        elif request.method == 'POST':
+            data = request.get_json()
+            selected_label = data.get("label")
+            selected = next((v for v in AVAILABLE_VOICES if v["label"] == selected_label), None)
+
+            if not selected:
+                return jsonify({"status": "error", "message": "Voice not found"}), 404
+
+            current_voice_path = selected["id"]
+            return jsonify({
+                "status": "success",
+                "message": f"Voice switched to {selected_label}",
+                "current_voice": selected
+            })
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+    
+##############################################################################################  
+#################################### debug_voices ############################################
+@app.route('/debug_voices', methods=['GET'])
+def debug_voices():
+    return jsonify({
+        "available_voices": AVAILABLE_VOICES,
+        #"current_voice": current_voice_path
+    })
 
 #######################################################################################################
 ##################################### / to test if backend is working #################################
@@ -586,7 +678,6 @@ def log_to_file(route_func):
                 result = route_func(*args, **kwargs)
                 success = True
             except Exception as e:
-                import traceback
                 print(f"Exception occurred: {str(e)}")
                 print(traceback.format_exc())
                 success = False
@@ -762,21 +853,26 @@ def process_audio():
         # --- 6. Preprocess Audio for ASR Model ---
         try:
             print("Preprocessing audio for ASR model...")
+
             audio_array, sampling_rate = librosa.load(tmp_audio_path, sr=16000)
             print(f"Original audio length: {len(audio_array)} samples at {sampling_rate}Hz")
 
-            # ASR models often require specific input lengths or padding
-            min_audio_length = 16000 # 1 second at 16kHz
+            # Step 1: Noise Reduction
+            #print("Applying noise reduction...")
+            #audio_array = nr.reduce_noise(y=audio_array, sr=sampling_rate)
+
+            # Step 2: Silence Removal
+            #print("Removing silent gaps...")
+            #audio_array, _ = librosa.effects.trim(audio_array, top_db=20)
+
+            # Step 3: Padding if too short
+            min_audio_length = 16000  # 1 sec
             if len(audio_array) < min_audio_length:
                 print(f"Audio too short ({len(audio_array)} samples), padding to {min_audio_length} samples.")
                 padding = np.zeros(min_audio_length - len(audio_array), dtype=audio_array.dtype)
                 audio_array = np.concatenate([audio_array, padding])
 
-            # Ensure audio length is a multiple of model's expected frame size (if applicable)
-            # This 'frame_size = 600' is very specific and might depend on the model.
-            # It's better to let the model's processor handle this if possible.
-            # However, if it's a known requirement, keep it.
-            # Consider if 'model.config.frame_size' or 'processor.feature_extractor.hop_length' is available.
+            # Step 4: Frame padding
             frame_size = 600
             remainder = len(audio_array) % frame_size
             if remainder != 0:
@@ -785,9 +881,10 @@ def process_audio():
                 padding = np.zeros(padding_needed, dtype=audio_array.dtype)
                 audio_array = np.concatenate([audio_array, padding])
 
-            # Overwrite the temporary WAV file with the preprocessed audio
+            # Save processed audio
             sf.write(tmp_audio_path, audio_array, 16000)
             print(f"Preprocessed audio saved. Final length: {len(audio_array)} samples.")
+
 
         except Exception as e:
             print(f"Error during audio preprocessing: {str(e)}")
@@ -848,72 +945,163 @@ def process_audio():
             word_accuracy = calculate_word_accuracy(phrase_text, transcription_text)
             print(f"Word Accuracy: {word_accuracy:.2f}%")
 
-        # --- 10. Perform Text-to-Speech (TTS) Conversion ---
+        # --- 10. TTS-Processing using F5-TTS ---
+        # print("Starting TTS model loading and audio generation...")
+        # tts_start_time = time.time()
+        # output_filename_s3 = f"{user_id}_output_{current_epoch_time}.wav"
+        # output_path = os.path.join(tempfile.gettempdir(), output_filename_s3)
+
+        # try:
+        #     if not transcription_text or transcription_text.strip() == "":
+        #         raise Exception("transcription_text is missing or empty.")
+
+        #     # Always use AVAILABLE_VOICES[0] as reference
+        #     if not AVAILABLE_VOICES:
+        #         raise Exception("No reference voices available.")
+
+        #     speaker_entry = AVAILABLE_VOICES[0]
+        #     ref_audio_path = speaker_entry["id"]
+
+        #     with open(speaker_entry["text"], "r") as f:
+        #         ref_text = f.read().strip()
+
+        #     print(f"Using hardcoded speaker: {speaker_entry['label']}")
+
+        #     if os.path.exists(output_path):
+        #         os.remove(output_path)
+
+        #     cmd = [
+        #         "f5-tts_infer-cli",
+        #         "--model", "F5TTS_v1_Base",
+        #         "--ref_audio", ref_audio_path,
+        #         "--ref_text", ref_text,
+        #         "--gen_text", transcription_text,
+        #         "--output_file", output_path
+        #     ]
+
+        #     print(f"Running F5-TTS CLI: {' '.join(cmd)}")
+        #     result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        #     print("F5-TTS CLI output:\n", result.stdout)
+
+        #     if not os.path.exists(output_path):
+        #         raise Exception("Expected output audio not found at specified location.")
+
+        #     print(f"Generated TTS audio saved to: {output_path}")
+        #     output_audio_s3_url = upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
+        #     if not output_audio_s3_url:
+        #         raise Exception("Failed to upload output audio file to S3.")
+        #     print(f"Output audio uploaded to S3: {output_audio_s3_url}")
+
+        #     tts_time = time.time() - tts_start_time
+        #     print(f"TTS processing completed in {tts_time:.2f} seconds.")
+
+        # except subprocess.CalledProcessError as e:
+        #     print(f"F5-TTS CLI error: {e.stderr or e.stdout or str(e)}")
+        #     import traceback; traceback.print_exc()
+        #     print("Creating fallback silent audio file...")
+        #     fallback_audio = np.zeros(24000, dtype=np.float32)
+        #     sf.write(output_path, fallback_audio, samplerate=24000)
+        #     output_audio_s3_url = upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
+        #     print(f"Fallback silent audio uploaded: {output_audio_s3_url}")
+
+        # except Exception as e:
+        #     print(f"Error in TTS processing: {str(e)}")
+        #     import traceback; traceback.print_exc()
+        #     print("Creating fallback silent audio file...")
+        #     fallback_audio = np.zeros(24000, dtype=np.float32)
+        #     sf.write(output_path, fallback_audio, samplerate=24000)
+        #     output_audio_s3_url = upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
+        #     print(f"Fallback silent audio uploaded: {output_audio_s3_url}")
+
+        # finally:
+        #     for path in [tmp_audio_path, output_path, uploaded_audio_path]:
+        #         if path and os.path.exists(path):
+        #             os.remove(path)
+
+        # --- 10. TTS-Processing using F5-TTS ---
         print("Starting TTS model loading and audio generation...")
         tts_start_time = time.time()
         output_filename_s3 = f"{user_id}_output_{current_epoch_time}.wav"
         output_path = os.path.join(tempfile.gettempdir(), output_filename_s3)
 
         try:
-            # The 'kokoro' pipeline expects a specific voice. Ensure 'am_adam' is valid.
-            if 'pipeline' not in locals() or not isinstance(pipeline, KPipeline):
-                print("Initializing KPipeline for TTS...")
-                # It's better to initialize KPipeline once globally if possible,
-                # or ensure it's re-initialized correctly with necessary parameters.
-                # Assuming KPipeline can be initialized per request if needed.
-                tts_pipeline_instance = KPipeline(lang_code='a') # Assuming 'a' is a valid language code for your setup.
+            # Ensure valid transcription
+            if not transcription_text or transcription_text.strip() == "":
+                raise Exception("transcription_text is missing or empty.")
+
+            # Determine reference audio and text based on speaker selection
+            if current_voice_path:
+                # Find speaker entry
+                speaker_entry = next((v for v in AVAILABLE_VOICES if v["id"] == current_voice_path), None)
+                if not speaker_entry:
+                    raise Exception("Selected speaker voice not found in available voices.")
+
+                ref_audio_path = speaker_entry["id"]
+                with open(speaker_entry["text"], "r") as f:
+                    ref_text = f.read().strip()
+
+                print(f"Using speaker voice: {speaker_entry['label']}")
             else:
-                tts_pipeline_instance = pipeline # Use the existing global pipeline if it's KPipeline
+                if not tmp_audio_path or not os.path.exists(tmp_audio_path):
+                    raise Exception("Reference audio is missing or invalid.")
+                ref_audio_path = tmp_audio_path
+                ref_text = phrase_text.strip() if phrase_text and phrase_text.strip() else transcription_text
 
-            # Generate audio chunks
-            audio_chunks = []
-            print(f"Sending transcription to TTS: '{transcription_text}'")
-            generator = tts_pipeline_instance(transcription_text, voice='am_adam') # Ensure 'voice' is correct
-            for j, (gs, ps, audio_segment) in enumerate(generator):
-                audio_chunks.append(audio_segment)
+                print("Using temporary reference audio and dynamic phrase.")
 
-            if not audio_chunks:
-                raise Exception("TTS generated no audio chunks.")
+            # Clean old output
+            if os.path.exists(output_path):
+                os.remove(output_path)
 
-            # Concatenate all audio chunks into a single audio clip
-            final_tts_audio = np.concatenate(audio_chunks)
+            # Build TTS command
+            cmd = [
+                "f5-tts_infer-cli",
+                "--model", "F5TTS_v1_Base",
+                "--ref_audio", ref_audio_path,
+                "--ref_text", ref_text,
+                "--gen_text", transcription_text,
+                "--output_file", output_path
+            ]
 
-            # Save the audio file at 24kHz
-            sf.write(output_path, final_tts_audio, 24000)
+            print(f"Running F5-TTS CLI: {' '.join(cmd)}")
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            print("F5-TTS CLI output:\n", result.stdout)
+
+            if not os.path.exists(output_path):
+                raise Exception("Expected output audio not found at specified location.")
+
             print(f"Generated TTS audio saved to: {output_path}")
-
-            # Verify the audio file exists and has content
-            if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-                raise Exception("Generated TTS audio file is empty or doesn't exist.")
-            print(f"Generated TTS audio file size: {os.path.getsize(output_path)} bytes.")
-
-            # Upload to S3
             output_audio_s3_url = upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
             if not output_audio_s3_url:
                 raise Exception("Failed to upload output audio file to S3.")
             print(f"Output audio uploaded to S3: {output_audio_s3_url}")
+
             tts_time = time.time() - tts_start_time
             print(f"TTS processing completed in {tts_time:.2f} seconds.")
 
-        except Exception as e:
-            print(f"Error in TTS processing: {str(e)}")
-            traceback.print_exc()
-            # Create a fallback audio file with silence if TTS fails
+        except subprocess.CalledProcessError as e:
+            print(f"F5-TTS CLI error: {e.stderr or e.stdout or str(e)}")
+            import traceback; traceback.print_exc()
             print("Creating fallback silent audio file...")
-            fallback_audio = np.zeros(24000, dtype=np.float32) # 1 second of silence at 24kHz, specify dtype
+            fallback_audio = np.zeros(24000, dtype=np.float32)
             sf.write(output_path, fallback_audio, samplerate=24000)
             output_audio_s3_url = upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
             print(f"Fallback silent audio uploaded: {output_audio_s3_url}")
-            # Do not return an error, allow the process to complete with fallback
+
+        except Exception as e:
+            print(f"Error in TTS processing: {str(e)}")
+            import traceback; traceback.print_exc()
+            print("Creating fallback silent audio file...")
+            fallback_audio = np.zeros(24000, dtype=np.float32)
+            sf.write(output_path, fallback_audio, samplerate=24000)
+            output_audio_s3_url = upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
+            print(f"Fallback silent audio uploaded: {output_audio_s3_url}")
 
         finally:
-            # Ensure temporary audio files are cleaned up
-            if tmp_audio_path and os.path.exists(tmp_audio_path):
-                os.remove(tmp_audio_path)
-            if output_path and os.path.exists(output_path): # Ensure output_path is cleaned too
-                os.remove(output_path)
-            if uploaded_audio_path and os.path.exists(uploaded_audio_path):
-                os.remove(uploaded_audio_path)
+            for path in [tmp_audio_path, output_path, uploaded_audio_path]:
+                if path and os.path.exists(path):
+                    os.remove(path)
+
 
 
         # --- 11. Prepare and Save Metadata ---
