@@ -11,7 +11,7 @@ import numpy as np
 import re
 import subprocess
 import traceback
-import noisereduce as nr
+#import noisereduce as nr
 import librosa.effects
 
 import sys
@@ -20,6 +20,7 @@ from functools import wraps
 from io import StringIO
 from contextlib import redirect_stdout
 
+#from faster_whisper import WhisperModel
 import whisper
 import boto3
 from botocore.exceptions import NoCredentialsError, ClientError
@@ -133,15 +134,44 @@ print(f"Connected to S3 bucket: {S3_BUCKET}")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
-# Define available models with `type` differentiation
-SPEAKERS_DIR = "speakers"
-AVAILABLE_VOICES = [{
-    "label": "GR",
-    "id": "speakers/GR.wav",
-    "text": "speakers/GR.txt"
-  }]
-current_voice_path = AVAILABLE_VOICES[0]["id"]
+# Define your SPEAKERS_DIR
+SPEAKERS_DIR = 'speakers' # Make sure this directory exists!
+if not os.path.exists(SPEAKERS_DIR):
+    os.makedirs(SPEAKERS_DIR)
 
+# Initialize AVAILABLE_VOICES as a global list
+AVAILABLE_VOICES = []
+current_voice_path = None # Initialize current_voice_path as well
+#current_voice_label = None
+
+# Function to load voices from the SPEAKERS_DIR
+def load_voices_from_directory():
+    global AVAILABLE_VOICES
+    AVAILABLE_VOICES = [] # Clear existing voices to avoid duplicates on re-load (if called multiple times)
+    for filename in os.listdir(SPEAKERS_DIR):
+        if filename.endswith(".wav"):
+            name = os.path.splitext(filename)[0]
+            audio_path = os.path.join(SPEAKERS_DIR, filename)
+            text_path = os.path.join(SPEAKERS_DIR, name + ".txt")
+
+            # Check if the corresponding .txt file exists, if not, create it
+            if not os.path.exists(text_path):
+                default_phrase = "Apples are healthy for you. The quick brown fox jumps over the lazy dog.."
+                with open(text_path, "w") as f:
+                    f.write(default_phrase)
+
+            voice_entry = {
+                "label": name,
+                "id": audio_path,
+                "text": text_path
+            }
+            AVAILABLE_VOICES.append(voice_entry)
+    print(f"Loaded voices: {AVAILABLE_VOICES}") # For debugging
+
+# Call this function when your application starts
+load_voices_from_directory()
+#current_voice_path = AVAILABLE_VOICES[0]["id"]
+#current_voice_label = AVAILABLE_VOICES[0]["id"]
 # Ensure the directory exists
 os.makedirs(SPEAKERS_DIR, exist_ok=True)
 
@@ -151,14 +181,14 @@ AVAILABLE_MODELS = [
     {"id": "/home/arun/ranga-ai/active-speech/testrun/Model/finetuned_m01", "label": "Whisper Fine-tuned on M01", "type": "whisper"},
     {"id": "/home/arun/ranga-ai/active-speech/testrun/Model/Synthetic_Phrasecards", "label": "Whisper Fine-tuned on Phrasecards and Synthetic data", "type": "whisper"},
     {"id": "/home/arun/ranga-ai/active-speech/testrun/Model/Synthetic_Finetuned_V2", "label": "Whisper Fine-tuned on Synthetic data V2", "type": "whisper"},
-    {"id": "/home/arun/ranga-ai/active-speech/testrun/Model/GR_V4/", "label": "Whisper Fine-tuned on GR_V4", "type": "whisper"}   
+    {"id": "/home/arun/ranga-ai/active-speech/testrun/Model/GR_V4/", "label": "Whisper Fine-tuned on GR_V4", "type": "whisper"},
+    {"id": "/home/arun/ranga-ai/active-speech/testrun/Model/GRV4_fast/", "label": "Whisper Fine-tuned on GR_V4_fast", "type": "whisper"} 
 ]
 
 
 ##########################################################################################################
 ########################### Model loading and initializing the base model ################################
 
-# Initial model path
 current_model_path = "./Model/finetuned_phrasecards"
 current_model_type = "whisper"  # Default model type
 
@@ -188,6 +218,25 @@ def load_whisper_model(model_path):
         return True, "Whisper model loaded successfully"
     except Exception as e:
         return False, str(e)
+# current_model_path = "./Model/finetuned_phrasecards"
+# current_model_type = "whisper"
+# device = "cpu"  # or "cpu"
+# compute_type = "float16" if device == "cuda" else "int8"
+
+# # Declare model globally
+# model = None
+
+# def load_whisper_model(model_path):
+#     global model
+#     try:
+#         model = WhisperModel(
+#             model_path,
+#             device=device,
+#             compute_type=compute_type
+#         )
+#         return True, "Whisper model loaded successfully using faster-whisper"
+#     except Exception as e:
+#         return False, str(e)
 
 def load_wav2vec2_model(model_path):
     global model, processor, asr_pipeline
@@ -487,14 +536,50 @@ def create_voice():
 #######################################################################################################
 ##################################### get_available_voices ############################################
 
+# @app.route('/get_available_voices', methods=['GET', 'POST'])
+# def get_available_voices():
+#     global current_voice_path
+#     #global current_voice_label
+#     try:
+#         if request.method == 'GET':
+#             current_voice = next((v for v in AVAILABLE_VOICES if v["id"] == current_voice_path), None)
+#             return jsonify({
+#                 "voices": AVAILABLE_VOICES,
+#                 "current_voice": current_voice,
+#                 "status": "success"
+#             })
+
+#         elif request.method == 'POST':
+#             data = request.get_json()
+#             selected_label = data.get("label")
+#             selected = next((v for v in AVAILABLE_VOICES if v["label"] == selected_label), None)
+            
+
+#             if not selected:
+#                 return jsonify({"status": "error", "message": "Voice not found"}), 404
+            
+#             #current_voice_label = selected['label']
+
+#             current_voice_path = selected["id"]
+#             return jsonify({
+#                 "status": "success",
+#                 "message": f"Voice switched to {selected_label}",
+#                 "current_voice": selected
+#             })
+
+#     except Exception as e:
+#         return jsonify({"status": "error", "message": str(e)}), 500
+#       # Store label
 @app.route('/get_available_voices', methods=['GET', 'POST'])
 def get_available_voices():
     global current_voice_path
     try:
         if request.method == 'GET':
-            current_voice = next((v for v in AVAILABLE_VOICES if v["id"] == current_voice_path), None)
+            # Sort AVAILABLE_VOICES by label (case-insensitive)
+            sorted_voices = sorted(AVAILABLE_VOICES, key=lambda v: v["label"].lower())
+            current_voice = next((v for v in sorted_voices if v["id"] == current_voice_path), None)
             return jsonify({
-                "voices": AVAILABLE_VOICES,
+                "voices": sorted_voices,
                 "current_voice": current_voice,
                 "status": "success"
             })
@@ -517,6 +602,46 @@ def get_available_voices():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
     
+##############################################################################################  
+#################################### delete_voice ############################################
+
+@app.route('/delete_voice', methods=['POST'])
+def delete_voice():
+    global AVAILABLE_VOICES, current_voice_path
+    try:
+        data = request.get_json()
+        label_to_delete = data.get("label")
+
+        if not label_to_delete:
+            return jsonify({"status": "error", "message": "Label is required"}), 400
+
+        # Find the voice entry
+        voice_entry = next((v for v in AVAILABLE_VOICES if v["label"] == label_to_delete), None)
+
+        if not voice_entry:
+            return jsonify({"status": "error", "message": "Voice not found"}), 404
+
+        # Remove files
+        audio_path = voice_entry["id"]
+        text_path = voice_entry.get("text")
+
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+
+        if text_path and os.path.exists(text_path):
+            os.remove(text_path)
+
+        # Remove from AVAILABLE_VOICES list
+        AVAILABLE_VOICES = [v for v in AVAILABLE_VOICES if v["label"] != label_to_delete]
+
+        # If current voice is deleted, reset current_voice_path
+        if current_voice_path == audio_path:
+            current_voice_path = None
+
+        return jsonify({"status": "success", "message": f"Deleted voice: {label_to_delete}"})
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 ##############################################################################################  
 #################################### debug_voices ############################################
 @app.route('/debug_voices', methods=['GET'])
@@ -903,28 +1028,48 @@ def process_audio():
         transcription_start_time = time.time()
         transcription_text = ""
 
-        try:
-            if effective_matching_model["type"] == "whisper":
-                # Ensure 'pipe' is correctly initialized for Whisper
-                if pipe is None:
-                    raise Exception("Whisper pipeline is not initialized.")
-                result = pipe(tmp_audio_path, generate_kwargs={"language": "english"})
-            elif effective_matching_model["type"] == "wav2vec2":
-                # Ensure 'asr_pipeline' is correctly initialized for Wav2Vec2
-                if asr_pipeline is None:
-                    raise Exception("Wav2Vec2 pipeline is not initialized.")
-                result = asr_pipeline(tmp_audio_path)
-            else:
-                raise Exception(f"Unsupported model type for transcription: {effective_matching_model['type']}")
+        
 
+        try:
+            if matching_model["type"] == "whisper":
+                    result = pipe(tmp_audio_path, generate_kwargs={"language": "english"})
+            elif matching_model["type"] == "wav2vec2":
+                    result = asr_pipeline(tmp_audio_path)
+            else:
+                    raise Exception(f"Unsupported model type for transcription: {matching_model['type']}")
             transcription_text = result['text'].strip()
+            
+            # if effective_matching_model["type"] == "whisper":
+            #     if model is None:
+            #         raise Exception("Whisper model is not initialized.")
+
+            #     # Use faster-whisper to transcribe
+            #     segments, info = model.transcribe(
+            #         tmp_audio_path,
+            #         beam_size=5,
+            #         language="en",  # Optional, based on your model support
+            #         word_timestamps=False  # Set to True if you need word-level alignment
+            #     )
+
+            #     # Combine all segment texts into a single string
+            #     transcription_text = " ".join([seg.text.strip() for seg in segments]).strip()
+
+            # elif effective_matching_model["type"] == "wav2vec2":
+            #     if asr_pipeline is None:
+            #         raise Exception("Wav2Vec2 pipeline is not initialized.")
+            #     result = asr_pipeline(tmp_audio_path)
+            #     transcription_text = result['text'].strip()
+            
+
             transcription_time = time.time() - transcription_start_time
             print(f"Transcription completed in {transcription_time:.2f} seconds.")
             print(f"Transcribed text: '{transcription_text}'")
+
         except Exception as e:
             print(f"Error during transcription: {str(e)}")
             traceback.print_exc()
             return jsonify({"error": f"Error during transcription: {str(e)}"}), 500
+
 
         # --- 8. Post-process Transcription ---
         # Note: 'remove_repeated_phrases' was commented out in your original code.
@@ -1112,7 +1257,8 @@ def process_audio():
             "inputFile": input_filename_s3, # Use the S3 filename
             "outputFile": output_filename_s3, # Use the S3 filename
             "Transcription": transcription_text,
-            "model_used": model_label_for_response, # Use the human-readable label
+            "model_used": model_label_for_response, 
+            #"speaker": current_voice_label,# Use the human-readable label
             "duration": current_epoch_time, # This usually refers to audio duration, not epoch time. Recheck logic.
                                             # If it's epoch time, maybe rename to 'request_timestamp'.
             "processing_time": {
@@ -1255,6 +1401,7 @@ def get_user(user_id):
 
 @app.route('/get_user_records/<user_id>', methods=['GET'])
 def get_user_records(user_id):
+    #global current_voice_label
     """Endpoint to retrieve metadata records for a specific user based on user_id."""
     metadata_filename = "metadata.json"
     metadata_filepath = os.path.join(os.getcwd(), metadata_filename)
@@ -1285,6 +1432,7 @@ def get_user_records(user_id):
                     "fileName": record.get("input_file"),
                     "accuracy": record.get("word_accuracy"),
                     "model_used": record.get("model_used"),
+                    #"speaker": current_voice_label,
                     "timestamp": record.get("duration"),
                     "processing_time": record.get("processing_time", {})
                 }
