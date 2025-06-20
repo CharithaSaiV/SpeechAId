@@ -13,7 +13,6 @@ import subprocess
 import traceback
 #import noisereduce as nr
 import librosa.effects
-
 import sys
 import datetime
 from functools import wraps
@@ -139,37 +138,52 @@ SPEAKERS_DIR = 'speakers' # Make sure this directory exists!
 if not os.path.exists(SPEAKERS_DIR):
     os.makedirs(SPEAKERS_DIR)
 
-# Initialize AVAILABLE_VOICES as a global list
-AVAILABLE_VOICES = []
-current_voice_path = None # Initialize current_voice_path as well
-#current_voice_label = None
+SPEAKERS_DIR = "./speakers"  # change if needed
+SPEAKERS_FILE = "speakers.json"
 
-# Function to load voices from the SPEAKERS_DIR
+AVAILABLE_VOICES = []
+current_voice_path = None
+
+# Load static voices (including "none") from speakers.json
+def load_static_voices():
+    if os.path.exists(SPEAKERS_FILE):
+        with open(SPEAKERS_FILE, "r") as f:
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                print("Error: Invalid JSON in speakers.json")
+    return []
+
+# Load dynamic .wav and .txt files from the speakers directory
 def load_voices_from_directory():
-    global AVAILABLE_VOICES
-    AVAILABLE_VOICES = [] # Clear existing voices to avoid duplicates on re-load (if called multiple times)
+    dynamic_voices = []
     for filename in os.listdir(SPEAKERS_DIR):
         if filename.endswith(".wav"):
             name = os.path.splitext(filename)[0]
             audio_path = os.path.join(SPEAKERS_DIR, filename)
             text_path = os.path.join(SPEAKERS_DIR, name + ".txt")
 
-            # Check if the corresponding .txt file exists, if not, create it
             if not os.path.exists(text_path):
-                default_phrase = "Apples are healthy for you. The quick brown fox jumps over the lazy dog.."
                 with open(text_path, "w") as f:
-                    f.write(default_phrase)
+                    f.write("Apples are healthy for you. The quick brown fox jumps over the lazy dog.")
 
             voice_entry = {
-                "label": name,
                 "id": audio_path,
+                "label": name,
                 "text": text_path
             }
-            AVAILABLE_VOICES.append(voice_entry)
-    print(f"Loaded voices: {AVAILABLE_VOICES}") # For debugging
+            dynamic_voices.append(voice_entry)
+    return dynamic_voices
 
-# Call this function when your application starts
-load_voices_from_directory()
+# Initialize AVAILABLE_VOICES by combining static + dynamic
+def initialize_voice_list():
+    global AVAILABLE_VOICES
+    static_voices = load_static_voices()
+    dynamic_voices = load_voices_from_directory()
+    AVAILABLE_VOICES = static_voices + dynamic_voices
+    print("Loaded voices:", AVAILABLE_VOICES)
+
+initialize_voice_list()
 #current_voice_path = AVAILABLE_VOICES[0]["id"]
 #current_voice_label = AVAILABLE_VOICES[0]["id"]
 # Ensure the directory exists
@@ -570,14 +584,51 @@ def create_voice():
 #     except Exception as e:
 #         return jsonify({"status": "error", "message": str(e)}), 500
 #       # Store label
+# @app.route('/get_available_voices', methods=['GET', 'POST'])
+# def get_available_voices():
+#     global current_voice_path
+#     try:
+#         if request.method == 'GET':
+#             # Sort AVAILABLE_VOICES by label (case-insensitive)
+#             sorted_voices = sorted(AVAILABLE_VOICES, key=lambda v: v["label"].lower())
+#             current_voice = next((v for v in sorted_voices if v["id"] == current_voice_path), None)
+#             return jsonify({
+#                 "voices": sorted_voices,
+#                 "current_voice": current_voice,
+#                 "status": "success"
+#             })
+
+#         elif request.method == 'POST':
+#             data = request.get_json()
+#             selected_label = data.get("label")
+#             selected = next((v for v in AVAILABLE_VOICES if v["label"] == selected_label), None)
+
+#             if not selected:
+#                 return jsonify({"status": "error", "message": "Voice not found"}), 404
+
+#             current_voice_path = selected["id"]
+#             return jsonify({
+#                 "status": "success",
+#                 "message": f"Voice switched to {selected_label}",
+#                 "current_voice": selected
+#             })
+
+#     except Exception as e:
+#         return jsonify({"status": "error", "message": str(e)}), 500
+    
 @app.route('/get_available_voices', methods=['GET', 'POST'])
 def get_available_voices():
     global current_voice_path
+
     try:
         if request.method == 'GET':
-            # Sort AVAILABLE_VOICES by label (case-insensitive)
             sorted_voices = sorted(AVAILABLE_VOICES, key=lambda v: v["label"].lower())
-            current_voice = next((v for v in sorted_voices if v["id"] == current_voice_path), None)
+
+            if current_voice_path == "none":
+                current_voice = next((v for v in sorted_voices if v["id"] == "none"), None)
+            else:
+                current_voice = next((v for v in sorted_voices if v["id"] == current_voice_path), None)
+
             return jsonify({
                 "voices": sorted_voices,
                 "current_voice": current_voice,
@@ -585,23 +636,41 @@ def get_available_voices():
             })
 
         elif request.method == 'POST':
-            data = request.get_json()
-            selected_label = data.get("label")
-            selected = next((v for v in AVAILABLE_VOICES if v["label"] == selected_label), None)
+                data = request.get_json()
+                selected_label = data.get("label")
 
-            if not selected:
-                return jsonify({"status": "error", "message": "Voice not found"}), 404
+                # ✅ Special handling: If "Default Male Voice" is selected, don't look in AVAILABLE_VOICES
+                if selected_label == "Default Male Voice":
+                    current_voice_path = "none"  # You can use this as a flag elsewhere in your code
+                    return jsonify({
+                        "status": "success",
+                        "message": "Voice switched to Default Male Voice",
+                        "current_voice": {
+                            "id": "none",
+                            "label": "Default Male Voice",
+                            "text": None
+                        }
+                    })
 
-            current_voice_path = selected["id"]
-            return jsonify({
-                "status": "success",
-                "message": f"Voice switched to {selected_label}",
-                "current_voice": selected
-            })
+                # 🔍 Otherwise, look for the selected voice in your available list
+                selected = next((v for v in AVAILABLE_VOICES if v["label"] == selected_label), None)
+
+                if not selected:
+                    return jsonify({"status": "error", "message": "Voice not found"}), 404
+
+                current_voice_path = selected["id"]
+                return jsonify({
+                    "status": "success",
+                    "message": f"Voice switched to {selected_label}",
+                    "current_voice": selected
+                })
+
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-    
+
+
+
 ##############################################################################################  
 #################################### delete_voice ############################################
 
@@ -1039,27 +1108,6 @@ def process_audio():
                     raise Exception(f"Unsupported model type for transcription: {matching_model['type']}")
             transcription_text = result['text'].strip()
             
-            # if effective_matching_model["type"] == "whisper":
-            #     if model is None:
-            #         raise Exception("Whisper model is not initialized.")
-
-            #     # Use faster-whisper to transcribe
-            #     segments, info = model.transcribe(
-            #         tmp_audio_path,
-            #         beam_size=5,
-            #         language="en",  # Optional, based on your model support
-            #         word_timestamps=False  # Set to True if you need word-level alignment
-            #     )
-
-            #     # Combine all segment texts into a single string
-            #     transcription_text = " ".join([seg.text.strip() for seg in segments]).strip()
-
-            # elif effective_matching_model["type"] == "wav2vec2":
-            #     if asr_pipeline is None:
-            #         raise Exception("Wav2Vec2 pipeline is not initialized.")
-            #     result = asr_pipeline(tmp_audio_path)
-            #     transcription_text = result['text'].strip()
-            
 
             transcription_time = time.time() - transcription_start_time
             print(f"Transcription completed in {transcription_time:.2f} seconds.")
@@ -1091,79 +1139,6 @@ def process_audio():
             print(f"Word Accuracy: {word_accuracy:.2f}%")
 
         # --- 10. TTS-Processing using F5-TTS ---
-        # print("Starting TTS model loading and audio generation...")
-        # tts_start_time = time.time()
-        # output_filename_s3 = f"{user_id}_output_{current_epoch_time}.wav"
-        # output_path = os.path.join(tempfile.gettempdir(), output_filename_s3)
-
-        # try:
-        #     if not transcription_text or transcription_text.strip() == "":
-        #         raise Exception("transcription_text is missing or empty.")
-
-        #     # Always use AVAILABLE_VOICES[0] as reference
-        #     if not AVAILABLE_VOICES:
-        #         raise Exception("No reference voices available.")
-
-        #     speaker_entry = AVAILABLE_VOICES[0]
-        #     ref_audio_path = speaker_entry["id"]
-
-        #     with open(speaker_entry["text"], "r") as f:
-        #         ref_text = f.read().strip()
-
-        #     print(f"Using hardcoded speaker: {speaker_entry['label']}")
-
-        #     if os.path.exists(output_path):
-        #         os.remove(output_path)
-
-        #     cmd = [
-        #         "f5-tts_infer-cli",
-        #         "--model", "F5TTS_v1_Base",
-        #         "--ref_audio", ref_audio_path,
-        #         "--ref_text", ref_text,
-        #         "--gen_text", transcription_text,
-        #         "--output_file", output_path
-        #     ]
-
-        #     print(f"Running F5-TTS CLI: {' '.join(cmd)}")
-        #     result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        #     print("F5-TTS CLI output:\n", result.stdout)
-
-        #     if not os.path.exists(output_path):
-        #         raise Exception("Expected output audio not found at specified location.")
-
-        #     print(f"Generated TTS audio saved to: {output_path}")
-        #     output_audio_s3_url = upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
-        #     if not output_audio_s3_url:
-        #         raise Exception("Failed to upload output audio file to S3.")
-        #     print(f"Output audio uploaded to S3: {output_audio_s3_url}")
-
-        #     tts_time = time.time() - tts_start_time
-        #     print(f"TTS processing completed in {tts_time:.2f} seconds.")
-
-        # except subprocess.CalledProcessError as e:
-        #     print(f"F5-TTS CLI error: {e.stderr or e.stdout or str(e)}")
-        #     import traceback; traceback.print_exc()
-        #     print("Creating fallback silent audio file...")
-        #     fallback_audio = np.zeros(24000, dtype=np.float32)
-        #     sf.write(output_path, fallback_audio, samplerate=24000)
-        #     output_audio_s3_url = upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
-        #     print(f"Fallback silent audio uploaded: {output_audio_s3_url}")
-
-        # except Exception as e:
-        #     print(f"Error in TTS processing: {str(e)}")
-        #     import traceback; traceback.print_exc()
-        #     print("Creating fallback silent audio file...")
-        #     fallback_audio = np.zeros(24000, dtype=np.float32)
-        #     sf.write(output_path, fallback_audio, samplerate=24000)
-        #     output_audio_s3_url = upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
-        #     print(f"Fallback silent audio uploaded: {output_audio_s3_url}")
-
-        # finally:
-        #     for path in [tmp_audio_path, output_path, uploaded_audio_path]:
-        #         if path and os.path.exists(path):
-        #             os.remove(path)
-
-        # --- 10. TTS-Processing using F5-TTS ---
         print("Starting TTS model loading and audio generation...")
         tts_start_time = time.time()
         output_filename_s3 = f"{user_id}_output_{current_epoch_time}.wav"
@@ -1174,8 +1149,10 @@ def process_audio():
             if not transcription_text or transcription_text.strip() == "":
                 raise Exception("transcription_text is missing or empty.")
 
-            # Determine reference audio and text based on speaker selection
-            if current_voice_path:
+            # Determine whether to use reference or fallback to default voice
+            use_reference = current_voice_path and current_voice_path.lower() != "none"
+
+            if use_reference:
                 # Find speaker entry
                 speaker_entry = next((v for v in AVAILABLE_VOICES if v["id"] == current_voice_path), None)
                 if not speaker_entry:
@@ -1184,15 +1161,13 @@ def process_audio():
                 ref_audio_path = speaker_entry["id"]
                 with open(speaker_entry["text"], "r") as f:
                     ref_text = f.read().strip()
-
                 print(f"Using speaker voice: {speaker_entry['label']}")
-            else:
-                if not tmp_audio_path or not os.path.exists(tmp_audio_path):
-                    raise Exception("Reference audio is missing or invalid.")
-                ref_audio_path = tmp_audio_path
-                ref_text = phrase_text.strip() if phrase_text and phrase_text.strip() else transcription_text
 
-                print("Using temporary reference audio and dynamic phrase.")
+            else:
+                # No reference: use default male voice behavior
+                ref_audio_path = None
+                ref_text = None
+                print("Using default male voice (no reference selected)")
 
             # Clean old output
             if os.path.exists(output_path):
@@ -1202,11 +1177,19 @@ def process_audio():
             cmd = [
                 "f5-tts_infer-cli",
                 "--model", "F5TTS_v1_Base",
-                "--ref_audio", ref_audio_path,
-                "--ref_text", ref_text,
                 "--gen_text", transcription_text,
                 "--output_file", output_path
             ]
+
+            if use_reference and ref_audio_path and ref_text:
+                cmd.extend(["--ref_audio", ref_audio_path])
+                cmd.extend(["--ref_text", ref_text])
+            # else:
+            #     # Optional: provide fallback static reference if F5-TTS cannot run without one
+            #     fallback_ref_audio = "/path/to/default_male.wav"
+            #     fallback_ref_text = "This is the default voice reference."
+            #     cmd.extend(["--ref_audio", fallback_ref_audio])
+            #     cmd.extend(["--ref_text", fallback_ref_text])
 
             print(f"Running F5-TTS CLI: {' '.join(cmd)}")
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -1246,6 +1229,7 @@ def process_audio():
             for path in [tmp_audio_path, output_path, uploaded_audio_path]:
                 if path and os.path.exists(path):
                     os.remove(path)
+
 
 
 
@@ -1298,6 +1282,222 @@ def process_audio():
         if 'uploaded_audio_path' in locals() and uploaded_audio_path and os.path.exists(uploaded_audio_path):
             os.remove(uploaded_audio_path)
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+#######################################################################################################
+##################################### batch_process_audio ###################################################
+
+
+# def handle_audio_processing(audio_file, text_file=None, user_id="NO_ID", selected_model=None):
+#     global current_model_path, model, processor, pipe, asr_pipeline
+
+#     current_epoch_time = int(time.time())
+#     phrase_text = None
+#     word_accuracy = None
+#     tmp_audio_path = None
+#     uploaded_audio_path = None
+
+#     # --- Load or Verify Model ---
+#     if selected_model:
+#         matching_model = next((m for m in AVAILABLE_MODELS if m["id"] == selected_model), None)
+#         if not matching_model:
+#             raise Exception(f"Model '{selected_model}' not found.")
+#         if selected_model != current_model_path:
+#             if matching_model["type"] == "whisper":
+#                 success, message = load_whisper_model(selected_model)
+#             elif matching_model["type"] == "wav2vec2":
+#                 success, message = load_wav2vec2_model(selected_model)
+#             else:
+#                 raise Exception(f"Unknown model type: {matching_model['type']}")
+#             if not success:
+#                 raise Exception(f"Model loading failed: {message}")
+#             current_model_path = selected_model
+#     else:
+#         matching_model = next((m for m in AVAILABLE_MODELS if m["id"] == current_model_path), None)
+
+#     # --- Read Reference Text ---
+#     if text_file:
+#         try:
+#             phrase_text = text_file.read().decode('utf-8').strip()
+#             with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as tmp_text:
+#                 text_file.seek(0)
+#                 tmp_text.write(text_file.read())
+#                 tmp_text.flush()
+#                 text_s3_filename = f"{user_id}_text_{current_epoch_time}.txt"
+#                 text_s3_url = upload_to_s3(tmp_text.name, text_s3_filename, S3_BUCKET)
+#                 os.remove(tmp_text.name)
+#         except Exception as e:
+#             raise Exception(f"Failed to process text file: {str(e)}")
+
+#     # --- Save and Convert Audio ---
+#     file_extension = os.path.splitext(audio_file.filename)[1].lower()
+#     supported_formats = {'.wav', '.mp3', '.m4a', '.mp4', '.weba'}
+
+#     if file_extension not in supported_formats and file_extension != '':
+#         raise Exception(f"Unsupported audio format: {file_extension}")
+
+#     with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension or '.tmp') as tmp_file:
+#         audio_file.save(tmp_file.name)
+#         uploaded_audio_path = tmp_file.name
+
+#     if file_extension != '.wav':
+#         if file_extension == '.m4a':
+#             audio = AudioSegment.from_file(uploaded_audio_path, format='m4a')
+#         elif file_extension in ['.mp4', '.weba', '.tmp']:
+#             audio = AudioSegment.from_file(uploaded_audio_path, format='webm')
+#         elif file_extension == '.mp3':
+#             audio = AudioSegment.from_file(uploaded_audio_path, format='mp3')
+#         else:
+#             audio = AudioSegment.from_file(uploaded_audio_path)
+#         tmp_audio_path = os.path.join(tempfile.gettempdir(), f"converted_{user_id}_{current_epoch_time}.wav")
+#         audio.export(tmp_audio_path, format='wav')
+#         os.remove(uploaded_audio_path)
+#     else:
+#         tmp_audio_path = uploaded_audio_path
+
+#     # --- Preprocess Audio ---
+#     audio_array, sampling_rate = librosa.load(tmp_audio_path, sr=16000)
+#     if len(audio_array) < 16000:
+#         audio_array = np.pad(audio_array, (0, 16000 - len(audio_array)))
+#     frame_size = 600
+#     remainder = len(audio_array) % frame_size
+#     if remainder:
+#         audio_array = np.pad(audio_array, (0, frame_size - remainder))
+#     sf.write(tmp_audio_path, audio_array, 16000)
+
+#     # --- Upload Input Audio to S3 ---
+#     input_filename_s3 = f"{user_id}_input_{current_epoch_time}.wav"
+#     input_audio_s3_url = upload_to_s3(tmp_audio_path, input_filename_s3, S3_BUCKET)
+
+#     # --- Transcribe Audio ---
+#     if matching_model["type"] == "whisper":
+#         result = pipe(tmp_audio_path, generate_kwargs={"language": "english"})
+#     elif matching_model["type"] == "wav2vec2":
+#         result = asr_pipeline(tmp_audio_path)
+#     else:
+#         raise Exception(f"Unsupported model type: {matching_model['type']}")
+#     transcription_text = result['text'].strip()
+
+#     transcription_text = correct_grammar(transcription_text)
+#     transcription_text = remove_filler_words(transcription_text)
+#     if not transcription_text.endswith(('.', '!', '?')):
+#         transcription_text += '.'
+
+#     if phrase_text:
+#         word_accuracy = calculate_word_accuracy(phrase_text, transcription_text)
+
+#     # --- Text-to-Speech (TTS) ---
+#     output_filename_s3 = f"{user_id}_output_{current_epoch_time}.wav"
+#     output_path = os.path.join(tempfile.gettempdir(), output_filename_s3)
+
+#     try:
+#         use_reference = current_voice_path and current_voice_path.lower() != "none"
+#         if use_reference:
+#             speaker_entry = next((v for v in AVAILABLE_VOICES if v["id"] == current_voice_path), None)
+#             ref_audio_path = speaker_entry["id"]
+#             with open(speaker_entry["text"], "r") as f:
+#                 ref_text = f.read().strip()
+#         else:
+#             ref_audio_path = None
+#             ref_text = None
+
+#         if os.path.exists(output_path):
+#             os.remove(output_path)
+
+#         cmd = [
+#             "f5-tts_infer-cli",
+#             "--model", "F5TTS_v1_Base",
+#             "--gen_text", transcription_text,
+#             "--output_file", output_path
+#         ]
+#         if use_reference:
+#             cmd += ["--ref_audio", ref_audio_path, "--ref_text", ref_text]
+
+#         subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+#         if not os.path.exists(output_path):
+#             raise Exception("TTS output not generated.")
+
+#         output_audio_s3_url = upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
+#     except Exception as e:
+#         fallback_audio = np.zeros(24000, dtype=np.float32)
+#         sf.write(output_path, fallback_audio, samplerate=24000)
+#         output_audio_s3_url = upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
+
+#     # --- Cleanup ---
+#     for f in [tmp_audio_path, output_path, uploaded_audio_path]:
+#         if f and os.path.exists(f):
+#             os.remove(f)
+
+#     return {
+#         "user_id": user_id,
+#         "input_audio_url": input_audio_s3_url,
+#         "output_audio_url": output_audio_s3_url,
+#         "transcription": transcription_text,
+#         "word_accuracy": round(word_accuracy, 2) if word_accuracy is not None else None,
+#         "model_used": matching_model["label"] if matching_model else selected_model,
+#     }
+
+# @app.route('/batch_process_audio', methods=['POST'])
+# @log_to_file
+# def batch_process_audio():
+#     global current_model_path
+
+#     try:
+#         audio_files = request.files.getlist('audio')
+#         text_files = request.files.getlist('text_file')  # optional
+#         user_id = request.form.get('user_id', 'NO_ID')
+#         selected_model = request.form.get('model')
+
+#         if not audio_files or len(audio_files) == 0:
+#             return jsonify({"error": "No audio files uploaded"}), 400
+
+#         print(f"Batch processing started for user: {user_id}")
+#         print(f"Audio files received: {[f.filename for f in audio_files]}")
+#         print(f"Text files received: {[f.filename for f in text_files]}")
+
+#         def match_text_file(audio_file_name):
+#             audio_base = os.path.splitext(audio_file_name)[0]
+#             return next((t for t in text_files if os.path.splitext(t.filename)[0] == audio_base), None)
+
+#         results = []
+
+#         for i, audio_file in enumerate(audio_files):
+#             print(f"\n--- Processing file {i+1}/{len(audio_files)}: {audio_file.filename} ---")
+#             try:
+#                 matching_text_file = match_text_file(audio_file.filename)
+#                 result = handle_audio_processing(
+#                     audio_file=audio_file,
+#                     text_file=matching_text_file,
+#                     user_id=user_id,
+#                     selected_model=selected_model
+#                 )
+#                 result["index"] = i
+#                 result["input_filename"] = audio_file.filename
+#                 result["status"] = "success"
+#             except Exception as e:
+#                 print(f"Error processing file {audio_file.filename}: {str(e)}")
+#                 traceback.print_exc()
+#                 result = {
+#                     "index": i,
+#                     "input_filename": audio_file.filename,
+#                     "status": "error",
+#                     "error": str(e)
+#                 }
+
+#             results.append(result)
+
+#         print(f"\nBatch processing complete. Total files: {len(results)}")
+#         return jsonify({
+#             "message": "Batch processing completed",
+#             "count": len(results),
+#             "results": results
+#         })
+
+#     except Exception as e:
+#         print("Unexpected error in /batch_process_audio:", str(e))
+#         traceback.print_exc()
+#         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
 
 ######################################################################################################
 ##################################### debug_models ###################################################
