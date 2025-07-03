@@ -1,0 +1,9 @@
+{
+    "slp_test_123": {
+        "slp_id": "slp_test_123",
+        "email": "slp.test@example.com",
+        "name": "Dr. Sarah Lee",
+        "clinic_name": "Speech & Language Clinic",
+        "registered_at": "2025-06-30T10:51:52.983164"
+    }
+}

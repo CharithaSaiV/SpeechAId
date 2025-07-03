@@ -13,6 +13,7 @@ import subprocess
 import traceback
 #import noisereduce as nr
 import librosa.effects
+import requests
 import sys
 import datetime
 from functools import wraps
@@ -1138,83 +1139,138 @@ def process_audio():
             word_accuracy = calculate_word_accuracy(phrase_text, transcription_text)
             print(f"Word Accuracy: {word_accuracy:.2f}%")
 
-        # --- 10. TTS-Processing using F5-TTS ---
+        # # --- 10. TTS-Processing using F5-TTS ---
+        # print("Starting TTS model loading and audio generation...")
+        # tts_start_time = time.time()
+        # output_filename_s3 = f"{user_id}_output_{current_epoch_time}.wav"
+        # output_path = os.path.join(tempfile.gettempdir(), output_filename_s3)
+
+        # try:
+        #     # Ensure valid transcription
+        #     if not transcription_text or transcription_text.strip() == "":
+        #         raise Exception("transcription_text is missing or empty.")
+
+        #     # Determine whether to use reference or fallback to default voice
+        #     use_reference = current_voice_path and current_voice_path.lower() != "none"
+
+        #     if use_reference:
+        #         # Find speaker entry
+        #         speaker_entry = next((v for v in AVAILABLE_VOICES if v["id"] == current_voice_path), None)
+        #         if not speaker_entry:
+        #             raise Exception("Selected speaker voice not found in available voices.")
+
+        #         ref_audio_path = speaker_entry["id"]
+        #         with open(speaker_entry["text"], "r") as f:
+        #             ref_text = f.read().strip()
+        #         print(f"Using speaker voice: {speaker_entry['label']}")
+
+        #     else:
+        #         # No reference: use default voice behavior
+        #         ref_audio_path = None
+        #         ref_text = None
+        #         print("Using default voice (no reference selected)")
+
+        #     # Clean old output
+        #     if os.path.exists(output_path):
+        #         os.remove(output_path)
+
+        #     # Build TTS command
+        #     cmd = [
+        #         "f5-tts_infer-cli",
+        #         "--model", "F5TTS_v1_Base",
+        #         "--gen_text", transcription_text,
+        #         "--output_file", output_path
+        #     ]
+
+        #     if use_reference and ref_audio_path and ref_text:
+        #         cmd.extend(["--ref_audio", ref_audio_path])
+        #         cmd.extend(["--ref_text", ref_text])
+            
+        #     print(f"Running F5-TTS CLI: {' '.join(cmd)}")
+        #     result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        #     print("F5-TTS CLI output:\n", result.stdout)
+
+        #     if not os.path.exists(output_path):
+        #         raise Exception("Expected output audio not found at specified location.")
+
+        #     print(f"Generated TTS audio saved to: {output_path}")
+        #     output_audio_s3_url = upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
+        #     if not output_audio_s3_url:
+        #         raise Exception("Failed to upload output audio file to S3.")
+        #     print(f"Output audio uploaded to S3: {output_audio_s3_url}")
+
+        #     tts_time = time.time() - tts_start_time
+        #     print(f"TTS processing completed in {tts_time:.2f} seconds.")
+
+        # except subprocess.CalledProcessError as e:
+        #     print(f"F5-TTS CLI error: {e.stderr or e.stdout or str(e)}")
+        #     import traceback; traceback.print_exc()
+        #     print("Creating fallback silent audio file...")
+        #     fallback_audio = np.zeros(24000, dtype=np.float32)
+        #     sf.write(output_path, fallback_audio, samplerate=24000)
+        #     output_audio_s3_url = upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
+        #     print(f"Fallback silent audio uploaded: {output_audio_s3_url}")
+
+        # except Exception as e:
+        #     print(f"Error in TTS processing: {str(e)}")
+        #     import traceback; traceback.print_exc()
+        #     print("Creating fallback silent audio file...")
+        #     fallback_audio = np.zeros(24000, dtype=np.float32)
+        #     sf.write(output_path, fallback_audio, samplerate=24000)
+        #     output_audio_s3_url = upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
+        #     print(f"Fallback silent audio uploaded: {output_audio_s3_url}")
+
+        # finally:
+        #     for path in [tmp_audio_path, output_path, uploaded_audio_path]:
+        #         if path and os.path.exists(path):
+        #             os.remove(path)
+        # 
         print("Starting TTS model loading and audio generation...")
-        tts_start_time = time.time()
+
         output_filename_s3 = f"{user_id}_output_{current_epoch_time}.wav"
         output_path = os.path.join(tempfile.gettempdir(), output_filename_s3)
 
         try:
-            # Ensure valid transcription
             if not transcription_text or transcription_text.strip() == "":
                 raise Exception("transcription_text is missing or empty.")
 
-            # Determine whether to use reference or fallback to default voice
+            # Check if using reference speaker
             use_reference = current_voice_path and current_voice_path.lower() != "none"
+            voice_id = current_voice_path if use_reference else "default"
 
-            if use_reference:
-                # Find speaker entry
-                speaker_entry = next((v for v in AVAILABLE_VOICES if v["id"] == current_voice_path), None)
-                if not speaker_entry:
-                    raise Exception("Selected speaker voice not found in available voices.")
+            print(f"Using voice ID: {voice_id}")
 
-                ref_audio_path = speaker_entry["id"]
-                with open(speaker_entry["text"], "r") as f:
-                    ref_text = f.read().strip()
-                print(f"Using speaker voice: {speaker_entry['label']}")
-
-            else:
-                # No reference: use default voice behavior
-                ref_audio_path = None
-                ref_text = None
-                print("Using default voice (no reference selected)")
-
-            # Clean old output
+            # Remove previous output if exists
             if os.path.exists(output_path):
                 os.remove(output_path)
 
-            # Build TTS command
-            cmd = [
-                "f5-tts_infer-cli",
-                "--model", "F5TTS_v1_Base",
-                "--gen_text", transcription_text,
-                "--output_file", output_path
-            ]
+            # ✅ Run TTS via FastAPI
+            tts_start_time = time.time()
+            payload = {
+                "gen_text": transcription_text,
+                "user_id": user_id,
+                "voice_id": voice_id
+            }
 
-            if use_reference and ref_audio_path and ref_text:
-                cmd.extend(["--ref_audio", ref_audio_path])
-                cmd.extend(["--ref_text", ref_text])
-            # else:
-            #     # Optional: provide fallback static reference if F5-TTS cannot run without one
-            #     fallback_ref_audio = "/path/to/default_male.wav"
-            #     fallback_ref_text = "This is the default voice reference."
-            #     cmd.extend(["--ref_audio", fallback_ref_audio])
-            #     cmd.extend(["--ref_text", fallback_ref_text])
+            response = requests.post("http://localhost:8000/tts", json=payload)
+            tts_time = time.time() - tts_start_time
 
-            print(f"Running F5-TTS CLI: {' '.join(cmd)}")
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-            print("F5-TTS CLI output:\n", result.stdout)
+            if response.status_code == 200:
+                with open(output_path, "wb") as f:
+                    f.write(response.content)
+                print(f"Generated TTS audio saved to: {output_path}")
+            else:
+                raise Exception(f"FastAPI TTS error {response.status_code}: {response.text}")
 
             if not os.path.exists(output_path):
                 raise Exception("Expected output audio not found at specified location.")
 
-            print(f"Generated TTS audio saved to: {output_path}")
+            # Upload to S3
             output_audio_s3_url = upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
             if not output_audio_s3_url:
                 raise Exception("Failed to upload output audio file to S3.")
             print(f"Output audio uploaded to S3: {output_audio_s3_url}")
-
-            tts_time = time.time() - tts_start_time
             print(f"TTS processing completed in {tts_time:.2f} seconds.")
-
-        except subprocess.CalledProcessError as e:
-            print(f"F5-TTS CLI error: {e.stderr or e.stdout or str(e)}")
-            import traceback; traceback.print_exc()
-            print("Creating fallback silent audio file...")
-            fallback_audio = np.zeros(24000, dtype=np.float32)
-            sf.write(output_path, fallback_audio, samplerate=24000)
-            output_audio_s3_url = upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
-            print(f"Fallback silent audio uploaded: {output_audio_s3_url}")
 
         except Exception as e:
             print(f"Error in TTS processing: {str(e)}")
@@ -1380,44 +1436,94 @@ def handle_audio_processing(audio_file, text_file=None, user_id="NO_ID", selecte
         word_accuracy = calculate_word_accuracy(phrase_text, transcription_text)
 
     # TTS
+    # output_filename_s3 = f"{user_id}_output_{current_epoch_time}.wav"
+    # output_path = os.path.join(tempfile.gettempdir(), output_filename_s3)
+    # tts_start = time.time()
+
+    # try:
+    #     use_reference = current_voice_path and current_voice_path.lower() != "none"
+    #     if use_reference:
+    #         speaker_entry = next((v for v in AVAILABLE_VOICES if v["id"] == current_voice_path), None)
+    #         ref_audio_path = speaker_entry["id"]
+    #         with open(speaker_entry["text"], "r") as f:
+    #             ref_text = f.read().strip()
+    #     else:
+    #         ref_audio_path = None
+    #         ref_text = None
+
+    #     if os.path.exists(output_path):
+    #         os.remove(output_path)
+
+    #     cmd = [
+    #         "f5-tts_infer-cli",
+    #         "--model", "F5TTS_v1_Base",
+    #         "--gen_text", transcription_text,
+    #         "--output_file", output_path
+    #     ]
+    #     if use_reference:
+    #         cmd += ["--ref_audio", ref_audio_path, "--ref_text", ref_text]
+
+    #     subprocess.run(cmd, check=True, capture_output=True, text=True)
+    #     if not os.path.exists(output_path):
+    #         raise Exception("TTS output not generated.")
+
+    #     upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
+
+    # except Exception as e:
+    #     fallback_audio = np.zeros(24000, dtype=np.float32)
+    #     sf.write(output_path, fallback_audio, samplerate=24000)
+    #     upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
+    # Prepare output path
     output_filename_s3 = f"{user_id}_output_{current_epoch_time}.wav"
     output_path = os.path.join(tempfile.gettempdir(), output_filename_s3)
-    tts_start = time.time()
+    
 
     try:
+        # Determine if user selected a reference voice
         use_reference = current_voice_path and current_voice_path.lower() != "none"
+        ref_audio_path = None
+        ref_text = None
+
         if use_reference:
             speaker_entry = next((v for v in AVAILABLE_VOICES if v["id"] == current_voice_path), None)
+            if not speaker_entry:
+                raise Exception(f"Speaker ID '{current_voice_path}' not found in available voices.")
             ref_audio_path = speaker_entry["id"]
             with open(speaker_entry["text"], "r") as f:
                 ref_text = f.read().strip()
-        else:
-            ref_audio_path = None
-            ref_text = None
 
+        # Remove existing output if any
         if os.path.exists(output_path):
             os.remove(output_path)
+        tts_start = time.time()
+        # Initialize F5-TTS (can cache this at global level)
+        f5tts = F5TTS(model="F5TTS_v1_Base")
 
-        cmd = [
-            "f5-tts_infer-cli",
-            "--model", "F5TTS_v1_Base",
-            "--gen_text", transcription_text,
-            "--output_file", output_path
-        ]
-        if use_reference:
-            cmd += ["--ref_audio", ref_audio_path, "--ref_text", ref_text]
-
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        # Generate TTS audio
+        wav, sr, _ = f5tts.infer(
+            ref_file=ref_audio_path,
+            ref_text=ref_text,
+            gen_text=transcription_text,
+            file_wave=output_path,
+            seed=None
+        )
+        tts_time = time.time() - tts_start
+        # Check if output was created
         if not os.path.exists(output_path):
-            raise Exception("TTS output not generated.")
+            raise Exception("TTS output was not generated successfully.")
 
+        # Upload to S3
         upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
 
     except Exception as e:
+        print(f"Error during TTS processing: {str(e)}")
+        import traceback; traceback.print_exc()
+
+        # Fallback: silent audio
         fallback_audio = np.zeros(24000, dtype=np.float32)
         sf.write(output_path, fallback_audio, samplerate=24000)
         upload_to_s3(output_path, output_filename_s3, S3_BUCKET)
-    tts_time = time.time() - tts_start
+    
 
     # Metadata
     total_response_time = time.time() - response_start_time

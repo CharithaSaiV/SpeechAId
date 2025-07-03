@@ -1,0 +1,16 @@
+{
+    "slp_test_123": {
+        "336b955d-d2c7-40d4-9dde-1d6f4396d773": {
+            "4d62ebc3-9bf4-4b3e-881f-00f84873bdd7": {
+                "slpId": "slp_test_123",
+                "patientId": "336b955d-d2c7-40d4-9dde-1d6f4396d773",
+                "phraseNumber": 1,
+                "phraseText": "The quick brown fox jumps over the lazy dog.",
+                "s3Key": "slp_test_123/336b955d-d2c7-40d4-9dde-1d6f4396d773/recordings/slp_test_123_336b955d-d2c7-40d4-9dde-1d6f4396d773_audio_4d62ebc3-9bf4-4b3e-881f-00f84873bdd7_phrase1.wav",
+                "s3Url": "https://speech-impairment.s3.eu-north-1.amazonaws.com/slp_test_123/336b955d-d2c7-40d4-9dde-1d6f4396d773/recordings/slp_test_123_336b955d-d2c7-40d4-9dde-1d6f4396d773_audio_4d62ebc3-9bf4-4b3e-881f-00f84873bdd7_phrase1.wav",
+                "uploadedAt": "2025-06-30T11:04:13.734661",
+                "contentType": "audio/wave"
+            }
+        }
+    }
+}
